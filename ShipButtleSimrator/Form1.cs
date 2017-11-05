@@ -19,6 +19,7 @@ namespace ShipButtleSimrator
         private void Form1_Load(object sender, EventArgs e)
         {
        vm     = new Kcsvm(this);
+            vm.StartBattle();
             timer1.Start();
         }
 

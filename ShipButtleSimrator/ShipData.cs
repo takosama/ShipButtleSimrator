@@ -31,8 +31,14 @@ namespace ShipButtleSimrator
             public double ARbase;
             public double EV;
             public double EVbase;
+        /// <summary>
+        /// 運
+        /// </summary>
             public double ASW;
             public double ASWbase;
+        /// <summary>
+        /// 索敵
+        /// </summary>
             public double LOS;
             public double LOSbase;
             public double LUK;
