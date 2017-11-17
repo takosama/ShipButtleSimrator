@@ -34,6 +34,16 @@ namespace ShipButtleSimrator
          
         }
 
+        public void SetSlotNum(int id, int slotID, int slotnum)
+        {
+            ShipData _;
+           if(this._shipDatas[id].shipData==null) return;
+            var ship = _shipDatas[id].shipData;
+            if (ship.SLOTS == null) return;
+            _shipDatas[id].shipData.SLOTS[slotID] = slotnum;
+        }
+
+
         public bool GetSlotData(int id, int slotId, out (ItemData Itemdata, int slotID, int caryNum) slotData)
         {
             ShipData _;
@@ -191,6 +201,280 @@ namespace ShipButtleSimrator
 
     }
 
+    class AirBattle : IGameSeen
+    {
+        private bool IsSearchSucsessed = true;
+        /// <summary>
+        /// 呼ぶ前にInitすること
+        /// </summary>
+        /// <param name="myFleet"></param>
+        /// <param name="eFleet"></param>
+        /// <returns></returns>
+        IGameSeenResult IGameSeen.ApplySeen(Fleet myFleet, Fleet eFleet)
+        {
+            int myADV = ComputeAirDefValue(myFleet);
+            int enADV = ComputeAirDefValue(eFleet);
+            //制空状態計算
+            var airstate = ComputeAirState(myADV, enADV, this.IsSearchSucsessed);
+            //st1撃墜反映
+            RefrectShootDown(true,myFleet, airstate);
+            RefrectShootDown(false,eFleet, airstate);
+
+
+            // 制空値 ＝ [(対空値 ＋ 装備別補正値 × ★改修値) × √(搭載数) ＋ 熟練度補正]
+            throw new NotImplementedException();
+        }
+
+        //触接開始判定
+        (bool IsStart,double StartRate) ComputeStartTouch(bool IsMyFleet,Fleet fleet,AirState airState)
+        {
+            /*
+
+        A = ∑(int( (艦上偵察機、水上偵察機、大型飛行艇の索敵值)*sqrt(機數) ))
+            B = 70 - (15 * 制空定數)
+            制空定數：　確保 = 3空優 = 2劣勢 = 1均衡、喪失、航空戦が発生しない = 0
+
+            触接開始判定 = if (A < (0 ~(B - 1)の一様な整数乱数) , 不發 , 触接開始 )
+
+                → 触接開始率 = (int(A) + 1) / B
+                */
+            if (IsMyFleet == false)
+                airState = ConvertToEnemy(airState);
+            double a = 0;
+            List<(ItemData ItemData, int carry)> JoinTouchStart = new List<(ItemData ItemData, int carry)>();
+            for (int i = 0; i < 6; i++)
+            for (int j = 0; j < 5; j++)
+            {
+                var tmp = fleet.GetSlotData(i, j, out var dat);
+                if (tmp == false) continue;
+                if (dat.caryNum == 0) continue;
+                if(CanJoinTouchStart(dat.Itemdata)==false)continue;
+                
+                JoinTouchStart.Add((dat.Itemdata,dat.caryNum));
+            }
+            if (JoinTouchStart.Count != 0)
+                a = JoinTouchStart.Select(x => (int) (double.Parse(x.ItemData.LOS) * Math.Sqrt(x.carry))).Sum();
+            int b = (int)( 70 - (15.0 * GetAirDefValueConst(airState)));
+            bool IsStart = false;
+            double rate = 0;
+            //触接開始判定 = if (A < (0 ~(B - 1)の一様な整数乱数) , 不發 , 触接開始 )
+            if (a < Random.getNext(0, b - 1))
+                IsStart = false;
+            else
+                IsStart = true;
+            //触接開始率
+            //                触接開始率 = (int(A) + 1) / B
+            if (IsStart)
+                rate = ((int) a + 1) / b;
+            else
+                rate = 0;
+            return (IsStart, rate);
+        }
+
+        AirState ConvertToEnemy(AirState a)
+        {
+            if (a == AirState.Ensure) return AirState.Loss;
+            if (a == AirState.Predominance) return AirState.Inferiority;
+            if (a == AirState.Balance) return AirState.Balance;
+            if (a == AirState.Inferiority) return AirState.Predominance;
+            if (a == AirState.Loss) return AirState.Ensure;
+            return 0;
+        }
+        int GetAirDefValueConst(AirState a)
+        {
+            if (a == AirState.Ensure) return 3;
+           else if (a == AirState.Predominance) return 2;
+           else if (a == AirState.Inferiority) return 1;
+            else return 0;
+        }
+        bool CanJoinTouchStart(ItemData item)
+        {
+            //艦上偵察機、水上偵察機、大型飛行艇の索敵值
+            //艦攻はいらない
+            if (item.type == "FLYINGBOAT") return true;
+            if (item.type == "SEAPLANE") return true;
+            if (item.type == "CARRIERSCOUT") return true;
+            return false;
+        }
+
+        private void RefrectShootDown(bool isMyFleet, Fleet fleet, AirState airstate)
+        {
+            for (int i = 0; i < 6; i++)
+            for (int j = 0; j < 5; j++)
+            {
+                var tmp = fleet.GetSlotData(i, j, out var dat);
+                if (tmp == false) continue;
+                //カ号　三式指揮は落ちない　
+                //航空戦未参加木をふるい落とす
+                if (CanJoinAirButtle(dat.Itemdata) == false) continue;
+                ;
+                var shootDownNum = ComputeShootDownNum(dat.caryNum, isMyFleet, airstate);
+
+                fleet.SetSlotNum(i, j, dat.caryNum - shootDownNum);
+            }
+        }
+
+        //撃墜数計算
+        int ComputeAirConst(AirState airState)
+        {
+            if (airState == AirState.Ensure) return 1;
+            if (airState == AirState.Predominance) return 3;
+            if (airState == AirState.Balance) return 5;
+            if (airState == AirState.Inferiority) return 7;
+            if (airState == AirState.Loss) return 10;
+            return 10;
+        }
+
+        int ComputeShootDownNum(int slotnum, bool IsMyFleet, AirState airState)
+        {
+
+            var AirConst = ComputeAirConst(airState);
+
+            double shootDownRand = 0;
+            if (IsMyFleet)
+                shootDownRand = GetRandDouble(0, (AirConst / 3.0), 0.1, 2) + AirConst / 4.0;
+            else
+                shootDownRand = 0.35 * GetRandDouble(0, 11 - AirConst, 1, 2) +
+                                0.65 * GetRandDouble(0, 11 - AirConst, 1, 2);
+            if ((int)(slotnum * shootDownRand / 10) > slotnum)
+                return slotnum;
+            else
+                return (int) (slotnum * shootDownRand / 10);
+
+
+        //            Stage1 擊墜數
+            //
+            //                制空定數 = 自軍制空状態 ：確保 = 1  、 劣勢 = 7  、  優勢 = 3  、  喪失 = 10  、  均衡 = 5
+            //
+            //            味方被擊墜乱数 = (0 ~制空定數 / 3)の0.1の倍数の一様な乱数 + 制空定數 / 4
+            //
+            //            相手被擊墜乱数 = 0.35 * ((0 ~(11 - 制空定數))の一様な整数乱数1) +0.65 * ((0 ~(11 - 制空定數))の一様な整数乱数2)
+            //
+            //            擊墜數 = if (int(機數 * 擊墜乱数 / 10) > 機數 , 機數 , int(機數 * 擊墜乱数 / 10))
+
+            double GetRandDouble(double min, double max, double up_keisu, int scale)
+            {
+                List<int> list = new List<int>();
+                int num = (int)Math.Pow(10.0, (double)scale);
+                int num2 = (int)(min * (double)num);
+                int num3 = (int)(max * (double)num);
+                int num4 = (int)(up_keisu * (double)num);
+                for (int i = num2; i <= num3; i += num4)
+                {
+                    list.Add(i);
+                }
+                var __AnonType = Enumerable.First(Enumerable.OrderBy(Enumerable.Select(list, (int value) => new
+                {
+                    value
+                }), x => Guid.NewGuid()));
+                return (double) __AnonType.value / (double)num;
+            }
+
+        }
+
+
+        AirState ComputeAirState(int myADV, int enADV, bool isSearchSuccsess)
+        {
+            if (!isSearchSuccsess)
+                myADV = 0;
+            if (myADV == 0 && enADV == 0)
+                return AirState.Balance;
+            if (enADV == 0)
+                return AirState.Ensure;
+            if (enADV * 3 >= myADV) return AirState.Ensure;
+            else if (enADV * 1.5 >= myADV) return AirState.Predominance;
+            else if (enADV * 2.0 / 3.0 > myADV) return AirState.Balance;
+            else if (enADV / 3.0 > myADV) return AirState.Inferiority;
+            else return AirState.Loss;
+        
+
+        /*
+        制空状態 自軍必要制空値 自軍被迎撃割合 敵機迎撃割合  触接 弾着観測射撃  夜間触接 * 20
+        自軍 敵軍  自軍 敵軍  自軍 敵軍
+        制空権喪失   1 / 3倍以下
+            もしくは自艦隊索敵失敗 65 / 256～150 / 256  0 %～10 % 不   可 不   可 不   可
+            航空劣勢（非表示）	1 / 3より大きい~2 / 3以下  45 / 256～105 / 256  0 %～40 % 可   可
+            航空均衡（非表示）	2 / 3より大きい~3 / 2未満
+            航空戦フェイズ未発生  30 / 256～75 / 256   0 %～60 % 不可  不可 * 21
+        可 * 22
+        航空優勢    3 / 2(1.5倍)以上~3倍未満    20 / 256～45 / 256   0 %～80 % 可   可 可   不 可   可
+            制空権確保   3倍以上
+    */
+        }
+
+        public enum AirState
+        {
+            Ensure,
+            Predominance,
+            Balance,
+            Inferiority,
+            Loss
+        }
+            
+
+        public void Init(SearchResult res)
+        {
+            if (res.Result == SearchResult.result.失敗 || res.Result == SearchResult.result.失敗_艦載機使用せず)
+                this.IsSearchSucsessed = false;
+        }
+
+        int ComputeAirDefValue(Fleet f)
+        {
+            var JoinPlanes = new List<(ItemData item, int slotID, int carryNum)>();
+            for (int i = 0; i < 6; i++)
+            for (int j = 0; j < 5; j++)
+            {
+                var tmp = f.GetSlotData(i, j, out var dat);
+                if (tmp == false) continue;
+                if (CanJoinAirButtle(dat.Itemdata) == false) continue;
+                if(dat.caryNum==0) continue;
+               
+                JoinPlanes.Add(dat);
+            }
+
+            var rtn = JoinPlanes.Select(x =>
+                (int)Math.Floor((int.Parse(x.item.AA) + GetSkillCrrection(x.item) * x.item.Level) * Math.Sqrt(x.carryNum) +
+                           GetSkillCrrection(x.item))
+            ).Sum();
+            return rtn;
+        }
+
+
+        double GetSkillCrrection(ItemData item)
+        {
+            int innerSkill = Skill.GetInnerSkill(item.Skill);
+// 内部熟練ボーナス＝√(内部熟練度 / 10)
+            var innerskillBounus = Math.Sqrt(innerSkill / 10);
+            //制空ボーナス(艦戦・水戦・局戦/水爆)
+            var AABounus = ComputeAABounus(item);
+
+
+            return innerSkill+AABounus;
+        }
+
+        int ComputeAABounus(ItemData data)
+        {
+            int[] CorrectionsWithoutSeaBomber = {0, 0, 2, 5, 9, 14, 14, 22};
+            int[] CorrectionSeaBomber = {0, 0, 1, 1, 1, 3, 3, 6};
+            int skill = data.Skill;
+            if (data.type == "FIGHTER") return CorrectionsWithoutSeaBomber[skill];
+            if (data.type == "SEAPLANEFIGHTER") return CorrectionsWithoutSeaBomber[skill];
+            if (data.type == "SEAPLANEBOMBER") return CorrectionSeaBomber[skill];
+            return 0;
+        }
+
+        //カ号　三式指揮などは　参加できない
+
+        bool CanJoinAirButtle(ItemData data)
+        {
+            if (data.type == "FIGHTER") return true;
+            if (data.type == "TORPBOMBER") return true;
+            if (data.type == "DIVEBOMBER") return true;
+            if (data.type == "SEAPLANEFIGHTER") return true;
+            if (data.type == "SEAPLANEBOMBER") return true;
+            return false;
+        }
+    }
 
 
 
