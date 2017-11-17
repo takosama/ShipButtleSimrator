@@ -13,6 +13,7 @@ using ShipButtleSimrator;
 using ShipButtleSimrator.Animation;
 using ShipButtleSimrator.GameObject;
 using Console = System.Console;
+using static ShipButtleSimrator.Kcsvm;
 
 namespace ShipButtleSimrator
 {
@@ -208,6 +209,15 @@ namespace ShipButtleSimrator
         private Fleet _myFleet;
         private Fleet _enFleet;
 
+      public  enum Formation
+        {
+            単縦,
+            複縦,
+            輪形,
+            梯形,
+            単横
+        }
+
     }
 
 
@@ -227,7 +237,7 @@ namespace ShipButtleSimrator
         /// <param name="myFleet"></param>
         /// <param name="eFleet"></param>
         /// <returns></returns>
-    public IGameSeenResult  ApplySeen(Fleet myFleet, Fleet eFleet)
+    public IGameSeenResult  ApplySeen(Fleet myFleet, Fleet eFleet,Formation formation)
         {
             int myADV = ComputeAirDefValue(myFleet,true);
             int enADV = ComputeAirDefValue(eFleet,false);
@@ -253,6 +263,80 @@ namespace ShipButtleSimrator
 
 
             throw new NotImplementedException();
+        }
+
+        double ComputeFleetAirDefenceVal(Fleet f)
+        {
+            var itemdatas = new List<ItemData>();
+            for(int i=0;i<6;i++)
+            for (int j = 0; j < 5; j++)
+            {
+                var tmp = f.GetSlotData(i, j, out var dat);
+                if (tmp == false) continue;
+                itemdatas.Add(dat.Itemdata);
+            }
+           int FleetAirDefenceBounusVal= (int)itemdatas.Select(x =>
+                ComputeWeaponCorrectionRate_AirDefence(x) * (x.AA == null ? 0 : double.Parse(x.AA)) +
+                ComputeWeaponLevelCorrectionRate_AirDefence(x) * Math.Sqrt(x.Level)).Sum();
+
+            //     各艦の艦隊対空ボーナス値 = [各装備の{ 装備倍率(艦隊防空) × 装備対空値 ＋ 改修係数(艦隊防空) × √(★改修値)}
+            //     の合計]　(全装備合計後に端数切捨て)
+            //   この表に載っていない装備種類の倍率は未検証です。
+            //
+            //   艦戦の改修効果は未検証です。
+            //
+            //   陣形補正
+            //       陣形  倍率
+            //       単縦陣、梯形陣、単横陣 1.0
+            //   複縦陣 1.2
+            //   輪形陣 1.6
+        }
+
+        double ComputeWeaponCorrectionRate_AirDefence(ItemData itemData)
+        {
+            //   装備倍率(艦隊防空)
+            //   装備種類 倍率
+            //   三式弾 0.6
+            //   電探(大型 / 小型)   0.4
+            //   高角砲 * 27、高射装置 0.35
+            //   主砲(赤)、副砲(黄)、対空機銃、
+            //   艦戦、艦爆、水偵    0.2
+            if (itemData.type == "TYPE3SHELL") return 0.6;
+            else if (itemData.type == "RADARXL") return 0.4;
+            else if (itemData.type == "RADARL") return 0.4;
+            else if (itemData.type == "RADARS") return 0.4;
+            else if (itemData.type == "SECGUNAA") return 0.35;
+            else if (itemData.type == "SECGUNSAA") return 0.35;
+            else if (itemData.type == "MAINGUNS") return 0.2;
+            else if (itemData.type == "MAINGUNM") return 0.2;
+            else if (itemData.type == "MAINGUNL") return 0.2;
+            else if (itemData.type == "MAINGUNXL") return 0.2;
+            else if (itemData.type == "SECGUN") return 0.2;
+            else if (itemData.type == "FIGHTER") return 0.2;
+            else if (itemData.type == "DIVEBOMBER") return 0.2;
+            else if (itemData.type == "SEAPLANE") return 0.2;
+            else return 0;
+        }
+
+        double ComputeWeaponLevelCorrectionRate_AirDefence(ItemData itemData)
+        {
+            //   改修係数(艦隊防空)
+            //   装備種類 倍率
+            //   高角砲(高射装置有)  3
+            //   高角砲(高射装置無)、高射装置 2
+            //   電探(大型 / 小型)   1.5A_HAFD,
+            //   対空機銃、副砲(黄)  0
+            if ((itemData.type == "SECGUNAA" || itemData.type == "SECGUNSAA") && itemData.btype == "A_HAFD")
+                return 3.0;
+            if ((itemData.type == "SECGUNAA" || itemData.type == "SECGUNSAA"))
+                return 2.0;
+            if (itemData.type == "AAFD")
+                return 2.0;
+             if (itemData.type == "RADARXL") return 1.5;
+             if (itemData.type == "RADARL") return  1.5;
+             if (itemData.type == "RADARS") return  1.5;
+            return 0;
+
         }
 
         //触接攻撃力補正　計算
