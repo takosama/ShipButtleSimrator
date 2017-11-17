@@ -220,17 +220,97 @@ namespace ShipButtleSimrator
             RefrectShootDown(true,myFleet, airstate);
             RefrectShootDown(false,eFleet, airstate);
 
+            //触接可否判定
+            var tmpm = ComputeStartTouch(true, myFleet, airstate);
+            var tmpe = ComputeStartTouch(false, eFleet, airstate);
+        
+            //触接機選択
+            var mTouchPlaneResult = ComputeTouchPlane(true, myFleet, airstate, tmpm);
+            var eTouchPlaneResult = ComputeTouchPlane(false, eFleet, airstate, tmpe);
 
-            // 制空値 ＝ [(対空値 ＋ 装備別補正値 × ★改修値) × √(搭載数) ＋ 熟練度補正]
+            //触接攻撃力補正
+            double mTouchCorrectionRate = ComputeTouchCorrectionPowerRate(mTouchPlaneResult);
+            double eTouchCorrectionRate = ComputeTouchCorrectionPowerRate(eTouchPlaneResult);
+
+
+
             throw new NotImplementedException();
+        }
+
+        //触接攻撃力補正　計算
+        private double ComputeTouchCorrectionPowerRate(
+            (bool isPlaneSelected, ItemData SelectedPlane) ComputeTouchPlaneResult)
+        {
+            if (ComputeTouchPlaneResult.isPlaneSelected == false)
+                return 1;
+            var tmp = int.Parse(ComputeTouchPlaneResult.SelectedPlane.ACC);
+            if (tmp == 0) return 1.12;
+            else if (tmp == 1) return 1.12;
+            else if (tmp == 2) return 1.17;
+            else return 1.20;
+        }
+
+        //触接機選択
+        private (bool isPlaneSelected, ItemData SelectedPlane) ComputeTouchPlane(bool IsMyFleet, Fleet fleet,
+            AirState airState,
+            (bool isStart, double StartRate) ComputeStartTouchResult)
+        {
+            if (IsMyFleet == false)
+                airState = ConvertToEnemy(airState);
+            if (ComputeStartTouchResult.isStart == false)
+                return (false, null);
+
+            if (ComputeStartTouchResult.StartRate > Random.GetNext())
+                return (false, null);
+
+            //触接機判定開始
+            var JoinTouch = new List<(ItemData itemData, int shipid, int slotid)>();
+            for (var i = 0; i < 6; i++)
+            for (var j = 0; j < 5; j++)
+            {
+                var tmp = fleet.GetSlotData(i, j, out var dat);
+                if (tmp == false) continue;
+                if (dat.caryNum == 0) continue;
+
+                if (CanJoinTouch(dat.Itemdata) == false) continue;
+                JoinTouch.Add((dat.Itemdata, i, j));
+            }
+            JoinTouch.Sort(Comparer);
+
+            //命中の　航巡　　艦の順番で　昇順　slotのidで昇順にソート
+            int Comparer((ItemData itemData, int shipid, int slotid) a, (ItemData itemData, int shipid, int slotid) b)
+            {
+                if (int.Parse(a.itemData.ACC) > int.Parse(b.itemData.ACC))
+                    return -1;
+                if (int.Parse(a.itemData.ACC) < int.Parse(b.itemData.ACC))
+                    return 1;
+                if (a.shipid < b.shipid)
+                    return -1;
+                if (a.shipid > b.shipid)
+                    return 1;
+                if (a.slotid < b.slotid)
+                    return -1;
+                if (a.slotid > b.slotid)
+                    return 1;
+                return 0;
+            }
+
+            foreach (var plane in JoinTouch)
+            {
+                var tmp = plane.itemData;
+                var rate = double.Parse(tmp.LOS) * 0.07;
+                //触接機の乱数判定
+                if (Random.GetNext() <= rate)
+                    return (true, tmp);
+            }
+            //すべて失敗でfalse
+            return (false, null);
         }
 
         //触接開始判定
         (bool IsStart,double StartRate) ComputeStartTouch(bool IsMyFleet,Fleet fleet,AirState airState)
         {
-            /*
-
-        A = ∑(int( (艦上偵察機、水上偵察機、大型飛行艇の索敵值)*sqrt(機數) ))
+            /*        A = ∑(int( (艦上偵察機、水上偵察機、大型飛行艇の索敵值)*sqrt(機數) ))
             B = 70 - (15 * 制空定數)
             制空定數：　確保 = 3空優 = 2劣勢 = 1均衡、喪失、航空戦が発生しない = 0
 
@@ -294,6 +374,15 @@ namespace ShipButtleSimrator
             if (item.type == "FLYINGBOAT") return true;
             if (item.type == "SEAPLANE") return true;
             if (item.type == "CARRIERSCOUT") return true;
+            return false;
+        }
+
+        bool CanJoinTouch(ItemData item)
+        {
+            if (item.type == "FLYINGBOAT") return true;
+            if (item.type == "SEAPLANE") return true;
+            if (item.type == "CARRIERSCOUT") return true;
+            if (item.type == "TORPBOMBER") return true;
             return false;
         }
 
