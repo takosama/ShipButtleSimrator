@@ -18,7 +18,13 @@ namespace ShipButtleSimrator
 
         private void Form1_Load(object sender, EventArgs e)
         {
-       vm     = new Kcsvm(this);
+            OpenFileDialog ofd=new OpenFileDialog();
+            ofd.ShowDialog();
+            var my = ofd.FileName;
+            ofd.ShowDialog();
+            var en = ofd.FileName;
+
+            vm = new Kcsvm(this,my,en);
             vm.StartBattle();
             timer1.Start();
         }

@@ -2,3 +2,33 @@
 {name:st1撃墜,url:https://gist.github.com/takosama/abe8855d37a41adce96659ce9480dfec}
 {name:触接開始判定開始率計算,url:https://gist.github.com/takosama/24821ab7724cf367b890b353cde6c750}
 }
+
+
+
+
+スロット[]を(id:rand(1,6),slot:スロット)[] datasに
+
+foreach(data in datas)
+{
+
+50%で実行	data.スロット= ship[data.id].割合();
+50%で実行	data.スロット= ship[data.id].固定();
+	data.スロット--;
+}
+
+datasからslotをとりだす slotnew;
+
+
+slotnewを(id:rand(1,6),slot:スロット)[] datasに
+
+
+foreach(data in datas)
+{
+ship[data.id].攻撃受ける(data.slot);
+}
+
+
+
+
+
+

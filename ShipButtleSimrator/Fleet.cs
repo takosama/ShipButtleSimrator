@@ -121,6 +121,8 @@ namespace ShipButtleSimrator
         {
             for (var i = 0; i < 6; i++)
             {
+                if(jsonObject.Length<=i) continue;
+              
                 var tmp = jsonObject[i];
                 if (tmp.shipData == null) continue;
                 _shipDatas[i].shipData = tmp.shipData;
@@ -163,7 +165,7 @@ namespace ShipButtleSimrator
 
     class Kcsvm
     {
-        public Kcsvm(Control c, string myFleet = "test.json")
+        public Kcsvm(Control c, string myFleet ,string enFleet)
         {
 
             var str = File.ReadAllText(myFleet);
@@ -174,10 +176,21 @@ namespace ShipButtleSimrator
 
             _myFleet.View();
 
-            foreach (var ship in _myFleet.ShipObjects)
-            {
-                GameObjectManager.Add(ship);
-            }
+           
+
+
+
+             str = File.ReadAllText(enFleet);
+
+             jsonObject = JsonConvert.DeserializeObject<(ItemData[] itemdata, ShipData shipData)[]>(str);
+
+            _enFleet = new Fleet(jsonObject, c);
+
+            _enFleet.View();
+
+          
+
+
         }
 
         public void StartBattle()
@@ -186,6 +199,10 @@ namespace ShipButtleSimrator
             _myFleet = reslut.MyFleet;
             _enFleet = reslut.EnFleet;
             reslut.ViewConsole();
+
+       var air=     new AirBattle();
+            air.Init((SearchResult)reslut);
+            air.ApplySeen(_myFleet, _enFleet);
         }
 
         private Fleet _myFleet;
@@ -210,17 +227,17 @@ namespace ShipButtleSimrator
         /// <param name="myFleet"></param>
         /// <param name="eFleet"></param>
         /// <returns></returns>
-        IGameSeenResult IGameSeen.ApplySeen(Fleet myFleet, Fleet eFleet)
+    public IGameSeenResult  ApplySeen(Fleet myFleet, Fleet eFleet)
         {
-            int myADV = ComputeAirDefValue(myFleet);
-            int enADV = ComputeAirDefValue(eFleet);
+            int myADV = ComputeAirDefValue(myFleet,true);
+            int enADV = ComputeAirDefValue(eFleet,false);
             //制空状態計算
             var airstate = ComputeAirState(myADV, enADV, this.IsSearchSucsessed);
             //st1撃墜反映
             RefrectShootDown(true,myFleet, airstate);
             RefrectShootDown(false,eFleet, airstate);
 
-            //触接可否判定
+            //触接可否判定 
             var tmpm = ComputeStartTouch(true, myFleet, airstate);
             var tmpe = ComputeStartTouch(false, eFleet, airstate);
         
@@ -232,6 +249,7 @@ namespace ShipButtleSimrator
             double mTouchCorrectionRate = ComputeTouchCorrectionPowerRate(mTouchPlaneResult);
             double eTouchCorrectionRate = ComputeTouchCorrectionPowerRate(eTouchPlaneResult);
 
+            { }
 
 
             throw new NotImplementedException();
@@ -242,12 +260,21 @@ namespace ShipButtleSimrator
             (bool isPlaneSelected, ItemData SelectedPlane) ComputeTouchPlaneResult)
         {
             if (ComputeTouchPlaneResult.isPlaneSelected == false)
+            {
+                Console.WriteLine("触接失敗");
                 return 1;
+            }
+            Console.WriteLine("触接成功");
+            Console.WriteLine(ComputeTouchPlaneResult.SelectedPlane.nameJP);
+
             var tmp = int.Parse(ComputeTouchPlaneResult.SelectedPlane.ACC);
-            if (tmp == 0) return 1.12;
-            else if (tmp == 1) return 1.12;
-            else if (tmp == 2) return 1.17;
-            else return 1.20;
+            double rtn = 0;
+            if (tmp == 0) rtn= 1.12;
+            else if (tmp == 1) rtn = 1.12;
+            else if (tmp == 2) rtn = 1.17;
+            else rtn = 1.20;
+            Console.WriteLine("補正値="+rtn);
+            return rtn;
         }
 
         //触接機選択
@@ -260,7 +287,7 @@ namespace ShipButtleSimrator
             if (ComputeStartTouchResult.isStart == false)
                 return (false, null);
 
-            if (ComputeStartTouchResult.StartRate > Random.GetNext())
+            if (ComputeStartTouchResult.StartRate < Random.GetNext())
                 return (false, null);
 
             //触接機判定開始
@@ -332,6 +359,11 @@ namespace ShipButtleSimrator
                 
                 JoinTouchStart.Add((dat.Itemdata,dat.caryNum));
             }
+            Console.WriteLine("触接可能は");
+            foreach (var p in JoinTouchStart)
+            {
+                Console.WriteLine(p.ItemData.nameJP);
+            }
             if (JoinTouchStart.Count != 0)
                 a = JoinTouchStart.Select(x => (int) (double.Parse(x.ItemData.LOS) * Math.Sqrt(x.carry))).Sum();
             int b = (int)( 70 - (15.0 * GetAirDefValueConst(airState)));
@@ -345,14 +377,14 @@ namespace ShipButtleSimrator
             //触接開始率
             //                触接開始率 = (int(A) + 1) / B
             if (IsStart)
-                rate = ((int) a + 1) / b;
+                rate = 1.0*((int) a + 1) / b;
             else
                 rate = 0;
             return (IsStart, rate);
         }
 
         AirState ConvertToEnemy(AirState a)
-        {
+         {
             if (a == AirState.Ensure) return AirState.Loss;
             if (a == AirState.Predominance) return AirState.Inferiority;
             if (a == AirState.Balance) return AirState.Balance;
@@ -400,6 +432,7 @@ namespace ShipButtleSimrator
                 var shootDownNum = ComputeShootDownNum(dat.caryNum, isMyFleet, airstate);
 
                 fleet.SetSlotNum(i, j, dat.caryNum - shootDownNum);
+                Console.WriteLine(i+","+j+dat.Itemdata.nameJP+" slot"+dat.caryNum+"　撃墜"+ shootDownNum);
             }
         }
 
@@ -470,11 +503,12 @@ namespace ShipButtleSimrator
                 return AirState.Balance;
             if (enADV == 0)
                 return AirState.Ensure;
-            if (enADV * 3 >= myADV) return AirState.Ensure;
-            else if (enADV * 1.5 >= myADV) return AirState.Predominance;
-            else if (enADV * 2.0 / 3.0 > myADV) return AirState.Balance;
-            else if (enADV / 3.0 > myADV) return AirState.Inferiority;
-            else return AirState.Loss;
+            if (enADV * 3 <= myADV) return AirState.Ensure;
+            else if (enADV * 1.5 <= myADV) return AirState.Predominance;
+            else if (enADV * 2.0 / 3.0 < myADV) return AirState.Balance;
+            else if (enADV / 3.0 < myADV) return AirState.Inferiority;
+            else
+                return AirState.Loss;
         
 
         /*
@@ -507,7 +541,7 @@ namespace ShipButtleSimrator
                 this.IsSearchSucsessed = false;
         }
 
-        int ComputeAirDefValue(Fleet f)
+        int ComputeAirDefValue(Fleet f,bool IsMyFleet)
         {
             var JoinPlanes = new List<(ItemData item, int slotID, int carryNum)>();
             for (int i = 0; i < 6; i++)
@@ -517,17 +551,31 @@ namespace ShipButtleSimrator
                 if (tmp == false) continue;
                 if (CanJoinAirButtle(dat.Itemdata) == false) continue;
                 if(dat.caryNum==0) continue;
-               
+         if(dat.Itemdata.AA==null) dat.Itemdata.AA="0";      
                 JoinPlanes.Add(dat);
             }
 
-            var rtn = JoinPlanes.Select(x =>
-                (int)Math.Floor((int.Parse(x.item.AA) + GetSkillCrrection(x.item) * x.item.Level) * Math.Sqrt(x.carryNum) +
-                           GetSkillCrrection(x.item))
-            ).Sum();
+            int ComputeVal((ItemData item, int slotID, int carryNum) x)
+            {
+                var tmp= (int) Math.Floor(
+                    (int.Parse(x.item.AA) + ComputeWeaponCorrection(x.item) * x.item.Level) * Math.Sqrt(x.carryNum) +
+               (IsMyFleet?GetSkillCrrection(x.item):0));
+                return tmp;
+            }
+            int rtn = JoinPlanes.Select(x =>ComputeVal(x)
+               ).Sum();
             return rtn;
         }
 
+
+        double ComputeWeaponCorrection(ItemData item)
+        {
+            if (item.type == "FIGHTER") return .2;
+            if (item.type == "TORPBOMBER") return .25;
+            if (item.type == "SEAPLANEFIGHTER") return .2;
+            return 0;
+
+        }
 
         double GetSkillCrrection(ItemData item)
         {
@@ -538,7 +586,7 @@ namespace ShipButtleSimrator
             var AABounus = ComputeAABounus(item);
 
 
-            return innerSkill+AABounus;
+            return innerskillBounus + AABounus;
         }
 
         int ComputeAABounus(ItemData data)
@@ -665,10 +713,10 @@ https://github.com/andanteyk/ElectronicObserver/blob/master/ElectronicObserver/O
     {
         public IGameSeenResult ApplySeen(Fleet myFleet, Fleet eFleet)
         {
-            var result = GetResult(myFleet);
+            var result = GetResult(myFleet,eFleet);
 
 
-            var tmp = GetResult(myFleet);
+            var tmp = GetResult(myFleet,eFleet);
     
            
             Command c=new Command();
@@ -681,7 +729,7 @@ https://github.com/andanteyk/ElectronicObserver/blob/master/ElectronicObserver/O
             return tmp;
         }
 
-        public SearchResult GetResult(Fleet myFleet)
+        public SearchResult GetResult(Fleet myFleet,Fleet enFleet)
         {
             var 加重艦船索敵值 = Compute加重艦船索敵值(myFleet);
             var 航空索敵值 = Compute航空索敵值(myFleet);
@@ -689,13 +737,15 @@ https://github.com/andanteyk/ElectronicObserver/blob/master/ElectronicObserver/O
             var 索敵項 = 加重艦船索敵值 + Compute艦船の數の補正(myFleet) - 20 + (int) (Math.Sqrt(10 * 航空索敵值));
 
             var result = GetResult(航空索敵值, 索敵項, 艦隊索敵防禦力);
-
+           
             var tmp = new SearchResult();
             tmp.Result = result;
             tmp.加重艦船索敵值 = 加重艦船索敵值;
             tmp.索敵項 = 索敵項;
             tmp.航空索敵值 = 航空索敵值;
             tmp.艦隊索敵防禦力 = 艦隊索敵防禦力;
+            tmp.MyFleet = myFleet;
+            tmp.EnFleet = enFleet;
             return tmp;
         }
 
